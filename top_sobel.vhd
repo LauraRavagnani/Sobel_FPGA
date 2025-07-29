@@ -336,17 +336,22 @@ begin
                     end if;
     
                 elsif gx_gy_computed = '1' then
-                    out_we <= "0"; 
+                    
                     out_we <= "1";
                     out_addr_wr <= std_logic_vector(to_unsigned(i*dim + j, 14));
                    
                     
                     grad := unsigned(abs(gx) + abs(gy));
-    
+                    
+                    -- output pixel = black if grad < thresh
                     if grad < threshold then
                         out_data_in <= (others => '0');
+                        
+                    -- output pixel = white if grad > 255
                     elsif grad > 255 then
                         out_data_in <= (others => '1');
+                        
+                    -- output pixel = grad otherwise
                     else
                         out_data_in <= std_logic_vector(resize(grad, 8));
                     end if;
@@ -394,15 +399,16 @@ begin
             
         elsif state = TRANSMITTING then
             
-            -- internal FSM
+            -- start internal fsm
             if tran_state = 10 then
                 if busy_internal = '0' then
-                    out_addr_rd <= std_logic_vector(to_unsigned(cnt_pxl_tran, 14));
+                    out_addr_rd <= std_logic_vector(to_unsigned(cnt_pxl_tran, 14));     -- read out_bram from 0 to tot_pxl 
                     
                     tran_state <= 20;
                 end if;
             end if;
             
+            -- two empty clk cycles because of port B read latency
             if tran_state = 20 then
                 tran_state <= 21;
             end if;
@@ -412,8 +418,8 @@ begin
             end if;
             
             if tran_state = 30 then
-                data_buffer <= out_dout;
-                pxl_valid_tx <= '1';
+                data_buffer <= out_dout;    -- save in data_buffer the pixel to send
+                pxl_valid_tx <= '1';        -- valid to start transition
                 
                 tran_state <= 40;
             end if;
@@ -426,7 +432,8 @@ begin
             end if;
             
             if tran_state = 50 then
-                if cnt_pxl_tran = dim**2+1 then
+                if cnt_pxl_tran = tot_pxl+1 then
+                    -- wait for the last pixel to fully transmit 
                     if busy_internal = '0' then
                         image_transmitted <= '1';
                     end if;

@@ -54,14 +54,14 @@ architecture Behavioral of top_sobel is
     
     -------------------------- receiver signals ---------------------------
      signal valid: std_logic := '0';   
-     signal received_pxl: std_logic_vector(7 downto 0);
+     signal received_pxl: std_logic_vector(7 downto 0) := (others => '0');
      signal cnt_pxl: natural := 0;                                                   -- signal to debug that counts the number od sent pixels
      
      
     -------------------------- processing signals ---------------------------
     signal i, j: natural := 0;                                                      -- signals to count inside the image when performing convolution
     signal ki, kj: integer := -1;                                                   -- signals to count inside the kernels
-    signal gx, gy: signed(10 downto 0);                                             -- to store gx_var and gy_var results ------> 11 bits should be enough to store +- 4x255
+    signal gx, gy: signed(10 downto 0) := (others => '0');                                             -- to store gx_var and gy_var results ------> 11 bits should be enough to store +- 4x255
     signal gx_gy_computed: std_logic := '0';                                        -- turn on when gx and gy are computed for each pixel
     signal process_done: std_logic := '0';
     signal pxl: std_logic_vector(7 downto 0) := (others => '0');                                       -- pixel to multiply with the kernel entries
@@ -72,7 +72,7 @@ architecture Behavioral of top_sobel is
     signal busy_internal: std_logic := '0';                      
     signal image_transmitted: std_logic := '0';
     signal cnt_pxl_tran: natural := 0;
-    signal data_buffer: std_logic_vector(7 downto 0);
+    signal data_buffer: std_logic_vector(7 downto 0) := (others => '0');
     signal tran_state: natural := 10;
    
     

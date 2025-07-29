@@ -53,42 +53,42 @@ architecture Behavioral of top_sobel is
     
     
     -------------------------- receiver signals ---------------------------
-     signal valid: std_logic := '0';   
-     signal received_pxl: std_logic_vector(7 downto 0) := (others => '0');
-     signal cnt_pxl: natural := 0;                                                   -- signal to debug that counts the number od sent pixels
+     signal valid: std_logic := '0';                                                -- mapped to data_valid port of receiver
+     signal received_pxl: std_logic_vector(7 downto 0) := (others => '0');          -- byte received that is saved in first bram
+     signal cnt_pxl: natural := 0;                                                  -- signal to debug that counts the number od sent pixels
      
      
     -------------------------- processing signals ---------------------------
     signal i, j: natural := 0;                                                      -- signals to count inside the image when performing convolution
-    signal ki, kj: integer := -1;                                                   -- signals to count inside the kernels
-    signal gx, gy: signed(10 downto 0) := (others => '0');                                             -- to store gx_var and gy_var results ------> 11 bits should be enough to store +- 4x255
-    signal gx_gy_computed: std_logic := '0';                                        -- turn on when gx and gy are computed for each pixel
-    signal process_done: std_logic := '0';
-    signal pxl: std_logic_vector(7 downto 0) := (others => '0');                                       -- pixel to multiply with the kernel entries
-    signal proc_state: natural := 10;
+    signal ki, kj: integer := -1;                                                   -- signals to count inside the kernels when performing convolution
+    signal gx, gy: signed(10 downto 0) := (others => '0');                          -- to store gx_var and gy_var results ------> 11 bits are enough to store +- 4x255
+    signal gx_gy_computed: std_logic := '0';                                        -- turns '1' when gx and gy are computed for each pixel
+    signal process_done: std_logic := '0';                                          -- turns '1' when image is entirely filtered   
+    signal pxl: std_logic_vector(7 downto 0) := (others => '0');                    -- actual pixel to multiply with one kernel entry when performing convolution
+    signal proc_state: natural := 10;                                               -- fsm state inside processing process to wait a clk cycle
     
     -------------------------- transmitter signals ---------------------------
-    signal pxl_ready: std_logic := '0';
-    signal busy_internal: std_logic := '0';                      
-    signal image_transmitted: std_logic := '0';
-    signal cnt_pxl_tran: natural := 0;
-    signal data_buffer: std_logic_vector(7 downto 0) := (others => '0');
-    signal tran_state: natural := 10;
+    signal pxl_valid_tx: std_logic := '0';                                          -- mapped to data_valid_tx port of transmitter
+    signal busy_internal: std_logic := '0';                                         -- mapped to busy port
+    signal image_transmitted: std_logic := '0';                                     -- turns '1' when filtered image is fully transmitted
+    signal cnt_pxl_tran: natural := 0;                                              -- counts the transmitted pixels
+    signal data_buffer: std_logic_vector(7 downto 0) := (others => '0');            -- used for debugging
+    signal tran_state: natural := 10;                                               -- fsm state inside transmitting process to wait a clk cycle
    
     
    ------------     image bram signals   ---------------------
-   signal img_we: std_logic_vector(0 downto 0) := "0";
-   signal img_addr_wr: std_logic_vector(13 downto 0) := (others => '0');
-   signal img_data_in: std_logic_vector(7 downto 0) := (others => '0');
-   signal img_addr_rd: std_logic_vector(13 downto 0) := (others => '0');
-   signal img_dout: std_logic_vector(7 downto 0) := (others => '0');  
+   signal img_we: std_logic_vector(0 downto 0) := "0";                              -- write enable signal
+   signal img_addr_wr: std_logic_vector(13 downto 0) := (others => '0');            -- address to write into
+   signal img_data_in: std_logic_vector(7 downto 0) := (others => '0');             -- data to write in the address
+   signal img_addr_rd: std_logic_vector(13 downto 0) := (others => '0');            -- address to read from
+   signal img_dout: std_logic_vector(7 downto 0) := (others => '0');                -- data read
    
    ------------     image_out bram signals   ---------------------
-   signal out_we: std_logic_vector(0 downto 0) := "0";
-   signal out_addr_wr:  std_logic_vector(13 downto 0) := (others => '0');
-   signal out_data_in: std_logic_vector(7 downto 0) := (others => '0');
-   signal out_addr_rd: std_logic_vector(13 downto 0) := (others => '0');
-   signal out_dout: std_logic_vector(7 downto 0) := (others => '0');  
+   signal out_we: std_logic_vector(0 downto 0) := "0";                              -- write enable signal         
+   signal out_addr_wr:  std_logic_vector(13 downto 0) := (others => '0');           -- address to write into       
+   signal out_data_in: std_logic_vector(7 downto 0) := (others => '0');             -- data to write in the address
+   signal out_addr_rd: std_logic_vector(13 downto 0) := (others => '0');            -- address to read from        
+   signal out_dout: std_logic_vector(7 downto 0) := (others => '0');                -- data read                   
     
     -- horizontal kernel
     constant kernel_x: kernel_type := (("111", "110", "111"),           -- -1,  -2, -1     
@@ -168,7 +168,7 @@ begin
                 Clk => Clk,
                 rst => rst,
                 data_to_send => data_buffer,
-                data_valid_tx => pxl_ready,
+                data_valid_tx => pxl_valid_tx,
                 busy => busy_internal,
                 uart_tx => uart_tx
                 );
@@ -176,12 +176,12 @@ begin
     image_bram : blk_mem_gen_0
         port map (
             clka  => Clk,
-            ena   => '1',
+            ena   => '1',       -- always enabled
             wea   => img_we,
             addra => img_addr_wr,
             dina  => img_data_in,
             clkb  => Clk,
-            enb   => '1',
+            enb   => '1',       -- always enabled
             addrb => img_addr_rd,
             doutb => img_dout
         );
@@ -189,17 +189,18 @@ begin
     image_out_bram : blk_mem_gen_1
         port map (
             clka  => Clk,
-            ena   => '1',
+            ena   => '1',       -- always enabled
             wea   => out_we,
             addra => out_addr_wr,
             dina  => out_data_in,
             clkb  => Clk,
-            enb   => '1',
+            enb   => '1',       -- always enabled
             addrb => out_addr_rd,
             doutb => out_dout
         );
         
-                
+    
+    -- connect output port to busy_internal             
     busy <= busy_internal;
     
     
@@ -211,16 +212,16 @@ begin
                 state <= IDLE;
             else
             case state is
-                when IDLE           =>  if uart_rx = '0' then
+                when IDLE           =>  if uart_rx = '0' then               -- when reception starts
                                             state <= RECEIVING;
                                         end if;
-                when RECEIVING      =>  if cnt_pxl = dim**2 then
+                when RECEIVING      =>  if cnt_pxl = tot_pxl then           -- when image is entirely received    
                                             state <= PROCESSING;
                                         end if;
-                when PROCESSING     =>  if process_done = '1' then
+                when PROCESSING     =>  if process_done = '1' then          -- when image is processed   
                                             state <= TRANSMITTING;
                                         end if;
-                when TRANSMITTING   =>  if image_transmitted = '1' then
+                when TRANSMITTING   =>  if image_transmitted = '1' then     -- when image is transmitted to PC
                                             state <= IDLE;
                                         end if;
             end case;
@@ -236,7 +237,7 @@ begin
     begin
         if rising_edge(Clk) then
             if rst = '1' then
-               cnt_pxl <= 0;
+                cnt_pxl <= 0;
                 
             elsif state = IDLE then 
                 cnt_pxl <= 0;
@@ -244,13 +245,14 @@ begin
             else 
                 img_we <= "0";
                 if valid = '1' and state = RECEIVING then
-                    img_we <= "1";
-                    img_addr_wr <= std_logic_vector(to_unsigned(cnt_pxl, 14));      -- write the value of bram address where the incoming pxl is written
-                    img_data_in <= received_pxl;
+                    img_we <= "1";                                                  -- enable writing to bram only when valid='1'
+                    img_addr_wr <= std_logic_vector(to_unsigned(cnt_pxl, 14));      -- bram is filled from address 0 to tot_pxl
+                    img_data_in <= received_pxl;                                    -- fill the address with received pixel
                     
+                    -- increase counter
                     cnt_pxl <= cnt_pxl + 1;
                 end if;
-                if cnt_pxl = dim**2 then
+                if cnt_pxl = tot_pxl then
                     cnt_pxl <= 0;
                 end if;
             end if;
@@ -262,8 +264,9 @@ begin
     --------------------    PROCESSING  ---------------------------
     
     process(Clk)
+        -- use variables to change value without having to wait next clk cycle
         variable gx_var, gy_var: signed(17 downto 0) := (others => '0'); -- 18 bits because result of multiplication of 9bits x 9bits
-        variable grad: unsigned(10 downto 0)  := (others => '0');
+        variable grad: unsigned(10 downto 0)  := (others => '0');        -- variable to store |gx| + |gy|
     begin
         if rising_edge(Clk) then
             if rst = '1' or state = IDLE then
@@ -282,23 +285,27 @@ begin
     
                 if gx_gy_computed = '0' then
                     
-                    if ki <= 1 and kj <= 1 then
+                    if ki <= 1 and kj <= 1 then     -- if inside kernel boundaries
+                        -- start internal fsm
                         if proc_state = 10 then
+                            -- if pixel to multiply is inside the image
                             if (i + ki >= 0 and i + ki <= dim-1 and j + kj >= 0 and j + kj <= dim-1) then
                                 img_addr_rd <= std_logic_vector(to_unsigned((i+ki)*dim + (j+kj), 14));
                             end if;
                             proc_state <= 13;
                         end if;
+                        -- two empty clk cycles because of port B read latency
                         if proc_state = 13 then
                             proc_state <= 14;
                         end if;
                         if proc_state = 14 then
                             proc_state <= 15;
                         end if;
-                        -- Pad borders with 0
                         if proc_state = 15 then
+                            -- if pixel to multiply is inside the image
                             if (i + ki >= 0 and i + ki <= dim-1 and j + kj >= 0 and j + kj <= dim-1) then
                                 pxl <= img_dout;
+                            -- if pixel to multiply is outside the image --> zero padding
                             else
                                 pxl <= (others => '0');
                             end if;
@@ -306,11 +313,11 @@ begin
                         end if;
                         
                         if proc_state = 20 then
-                            -- update gx_var, gy_var
+                            -- update gx_var and gy_var
                             gx_var := gx_var + signed(resize(unsigned(pxl), 9)) * signed(resize(kernel_x(ki+1, kj+1), 9));
                             gy_var := gy_var + signed(resize(unsigned(pxl), 9)) * signed(resize(kernel_y(ki+1, kj+1), 9));
                         
-                        -- Advance kernel indices
+                            -- Advance kernel indices
                             if kj < 1 then
                                 kj <= kj + 1;
                             else
@@ -318,7 +325,7 @@ begin
                                 ki <= ki + 1;
                             end if;
     
-                            -- Check if kernel window is done
+                            -- if kernel window is done
                             if ki = 1 and kj = 1 then
                                 gx <= resize(gx_var, 11);
                                 gy <= resize(gy_var, 11);
@@ -329,8 +336,7 @@ begin
                     end if;
     
                 elsif gx_gy_computed = '1' then
-                    out_we <= "0";
-                   
+                    out_we <= "0"; 
                     out_we <= "1";
                     out_addr_wr <= std_logic_vector(to_unsigned(i*dim + j, 14));
                    
@@ -376,13 +382,13 @@ begin
     if rising_edge(Clk) then
         if rst = '1' then
           cnt_pxl_tran <= 0;
-          pxl_ready <= '0';
+          pxl_valid_tx <= '0';
           image_transmitted <= '0';
           data_buffer <= (others => '0');
             
         elsif state = IDLE then
             cnt_pxl_tran <= 0;
-            pxl_ready <= '0';
+            pxl_valid_tx <= '0';
             image_transmitted <= '0';
             data_buffer <= (others => '0');
             
@@ -407,13 +413,13 @@ begin
             
             if tran_state = 30 then
                 data_buffer <= out_dout;
-                pxl_ready <= '1';
+                pxl_valid_tx <= '1';
                 
                 tran_state <= 40;
             end if;
             
             if tran_state = 40 then
-                pxl_ready <= '0';
+                pxl_valid_tx <= '0';
                 cnt_pxl_tran <= cnt_pxl_tran + 1;
                 
                 tran_state <= 50;
